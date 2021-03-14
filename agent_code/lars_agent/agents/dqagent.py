@@ -5,7 +5,7 @@ from numba import jit, cuda
 from ..utils import *
 
 
-class QAgent:
+class DQAgent:
     def __init__(self, actions: np.ndarray, epsilon = 1.0, train = True, temperature = 1.0):
         self.actions = actions
         self.epsilon = epsilon
@@ -21,6 +21,9 @@ class QAgent:
         return self.exploit(state)
 
     def explore(self, state: dict):
+        """
+        Explore the game world outside of the current policy
+        """
         features = tuple(self.features(state))
 
         action_counts = self.feature_action_counts.get(features)
@@ -45,6 +48,9 @@ class QAgent:
         return self.actions[action]
 
     def exploit(self, state: dict):
+        """
+        Exploit the current policy
+        """
         # transform the game state into features
         features = self.features(state)
         # transform the features into action values

@@ -1,5 +1,5 @@
 
-from .agents import QAgent
+from .agents import DQAgent
 from .utils import timer
 
 import numpy as np
@@ -9,7 +9,7 @@ def setup(self):
 
     peaceful_actions = np.array(["UP", "DOWN", "LEFT", "RIGHT", "WAIT"])
 
-    self.agent = QAgent(actions=peaceful_actions, train=True)
+    self.agent = DQAgent(actions=peaceful_actions, train=True)
 
 
 def act(self, game_state: dict):
