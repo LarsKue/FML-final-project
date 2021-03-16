@@ -127,6 +127,10 @@ class QLambdaAgent:
 
         action = self.actions[np.random.choice(best_actions)]
 
+        #print("\n")
+        #print(np.round(features, 3))
+        #print(q)
+
         return action
 
     def _calculate_reward(self, events: List[str]):
@@ -276,7 +280,7 @@ class QLambdaAgent:
 
         return np.stack([
             # + move towards coin
-            self._feature_1(board_with_coins, current_position, next_positions),
+            self._feature_1(board_with_coins, board_without_explosion, current_position, next_positions),
             # + collect coin
             self._feature_2(board_with_coins, current_position, next_positions),
             # - invalid action
@@ -305,7 +309,7 @@ class QLambdaAgent:
             self._feature_14(board_with_dead_ends, board_without_explosion, current_position, next_positions)
         ], axis=0)
 
-    def _feature_1(self, board_with_coins, current_position, next_positions):
+    def _feature_1_old(self, board_with_coins, current_position, next_positions):
         # move towards nearest coin
         shortest_path_coins = self._shortest_path(board_with_coins, current_position, self.COIN_VALUE, free_tiles=(self.FREE_VALUE, self.COIN_VALUE))
 
@@ -324,6 +328,46 @@ class QLambdaAgent:
                     else:
                         feature1[i] = 0.5
                     # feature1[i] = 1
+
+        return feature1
+
+    def _feature_1(self, board_with_coins, board_without_explosion, current_position, next_positions):
+        # number of steps to coin in direction
+        
+        feature1 = np.zeros(len(self.actions))
+
+        value_of_current_position = board_with_coins[current_position]
+        board_with_coins[current_position] = 10 # cannot go back to this tile
+
+        for i, next_position in enumerate(next_positions):
+            if self.actions[i] == 'WAIT' or self.actions[i] == 'BOMB':
+                continue
+            if board_without_explosion[next_position] != self.FREE_VALUE:
+                continue
+            shortest_path_coins = self._shortest_path(board_with_coins, next_position, self.COIN_VALUE, free_tiles=(self.FREE_VALUE, self.COIN_VALUE))
+
+            if shortest_path_coins is None:
+                continue
+
+            path_length = len(shortest_path_coins[0]) + 1
+            feature1[i] = path_length
+        
+        if np.count_nonzero(feature1) == 0:
+            return feature1
+
+        min_path_length = np.min(feature1[feature1 != 0])
+
+        for i in range(len(feature1)):
+            if feature1[i] == 0:
+                continue
+            feature1[i] = min_path_length / feature1[i]
+
+        if min_path_length > 15:
+            feature1 *= 0.5
+        elif min_path_length > 10:
+            feature1 *= 0.75
+
+        board_with_coins[current_position] = value_of_current_position
 
         return feature1
 
@@ -395,7 +439,7 @@ class QLambdaAgent:
 
         return feature5
 
-    def _feature_6(self, board_without_explosion, current_position, next_positions):
+    def _feature_6_old(self, board_without_explosion, current_position, next_positions):
         # move towards nearest crate
 
         feature6 = np.zeros(len(self.actions))
@@ -411,6 +455,49 @@ class QLambdaAgent:
             for i, next_position in enumerate(next_positions):
                 if next_position in best_next_positions:
                     feature6[i] = 1
+
+        return feature6
+
+    def _feature_6(self, board_without_explosion, current_position, next_positions):
+        # steps to next crate for each direction
+
+        feature6 = np.zeros(len(self.actions))
+
+        for next_position in next_positions:
+            if board_without_explosion[next_position] == self.CRATE_VALUE:
+                # already standing next to crate
+                return np.zeros(len(self.actions))
+
+        value_of_current_position = board_without_explosion[current_position]
+        board_without_explosion[current_position] = 10 # cannot go back to this tile
+
+        for i, next_position in enumerate(next_positions):
+            if board_without_explosion[next_position] != self.FREE_VALUE:
+                continue
+            
+            shortest_path_crates = self._shortest_path(board_without_explosion, next_position, self.CRATE_VALUE, free_tiles=(self.FREE_VALUE, self.CRATE_VALUE))
+            
+            if shortest_path_crates is None:
+                continue
+            
+            if len(shortest_path_crates[0]) == 2:
+                # len==2 => standing next to crate
+                feature6[i] = 1
+            else:
+                feature6[i] = len(shortest_path_crates[0]) - 1
+
+
+        if np.count_nonzero(feature6) == 0:
+            return feature6
+
+        min_path_length = np.min(feature6[feature6 != 0])
+
+        for i in range(len(feature6)):
+            if feature6[i] == 0:
+                continue
+            feature6[i] = min_path_length / feature6[i]
+
+        board_without_explosion[current_position] = value_of_current_position
 
         return feature6
 
@@ -472,7 +559,7 @@ class QLambdaAgent:
 
         return feature9
 
-    def _feature_10(self, board_without_explosion, current_position, next_positions):
+    def _feature_10_old(self, board_without_explosion, current_position, next_positions):
         # move towards nearest enemy
 
         feature10 = np.zeros(len(self.actions))
@@ -488,6 +575,49 @@ class QLambdaAgent:
             for i, next_position in enumerate(next_positions):
                 if next_position in best_next_positions:
                     feature10[i] = 1
+
+        return feature10
+
+    def _feature_10(self, board_without_explosion, current_position, next_positions):
+        # steps to next enemy for each direction
+
+        feature10 = np.zeros(len(self.actions))
+
+        for next_position in next_positions:
+            if board_without_explosion[next_position] == self.ENEMY_VALUE:
+                # already standing next to enemy
+                return np.zeros(len(self.actions))
+
+        value_of_current_position = board_without_explosion[current_position]
+        board_without_explosion[current_position] = 10 # cannot go back to this tile
+
+        for i, next_position in enumerate(next_positions):
+            if board_without_explosion[next_position] != self.FREE_VALUE:
+                continue
+            
+            shortest_path_enemies = self._shortest_path(board_without_explosion, next_position, self.ENEMY_VALUE, free_tiles=(self.FREE_VALUE, self.ENEMY_VALUE))
+            
+            if shortest_path_enemies is None:
+                continue
+            
+            if len(shortest_path_enemies[0]) == 2:
+                # len==2 => standing next to enemy
+                feature10[i] = 1
+            else:
+                feature10[i] = len(shortest_path_enemies[0]) - 1
+
+
+        if np.count_nonzero(feature10) == 0:
+            return feature10
+
+        min_path_length = np.min(feature10[feature10 != 0])
+
+        for i in range(len(feature10)):
+            if feature10[i] == 0:
+                continue
+            feature10[i] = min_path_length / feature10[i]
+
+        board_without_explosion[current_position] = value_of_current_position
 
         return feature10
 
