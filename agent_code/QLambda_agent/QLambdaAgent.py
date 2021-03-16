@@ -21,7 +21,7 @@ class QLambdaAgent:
         self.train = train
 
         self.previous_action = None
-        self.invalid_move = False
+        self.current_action = None
 
         self.WALL_VALUE = -1
         self.FREE_VALUE = 0
@@ -63,6 +63,8 @@ class QLambdaAgent:
     def act(self, game_state: dict):
         if game_state['step'] == 1:
             self.previous_action = None
+            self.current_action = None
+        self.previous_action = self.current_action
         action = None
         if self.train:
             if np.random.uniform() < self.epsilon:
@@ -74,10 +76,8 @@ class QLambdaAgent:
         else:
             action = self._exploit(game_state)
 
-        if self.invalid_move:
-            self.previous_action = None
-        else:
-            self.previous_action = action
+        if self._action_is_valid(game_state, action) and not (self.previous_action == 'BOMB' and action == 'WAIT'):
+            self.current_action = action
         return action
 
     def add_sars(self, old_game_state: dict, action: str, new_game_state: dict, events: List[str]):
@@ -117,10 +117,6 @@ class QLambdaAgent:
 
     def _explore(self, game_state: dict):
         action = np.random.choice(self.actions)
-        if action == 'BOMB' and not game_state['self'][2]:
-            self.invalid_move = True
-        else:
-            self.invalid_move = False
         return action
 
     def _exploit(self, game_state: dict):
@@ -131,11 +127,6 @@ class QLambdaAgent:
 
         action = self.actions[np.random.choice(best_actions)]
 
-        if action == 'BOMB' and not game_state['self'][2]:
-            self.invalid_move = True
-        else:
-            self.invalid_move = False
-
         return action
 
     def _calculate_reward(self, events: List[str]):
@@ -144,8 +135,6 @@ class QLambdaAgent:
         for event in events:
             if event == e.INVALID_ACTION:
                 reward += -200
-            elif event == e.BOMB_DROPPED:
-                reward += 5
             elif event == e.CRATE_DESTROYED:
                 reward += 10
             elif event == e.COIN_FOUND:
@@ -239,6 +228,7 @@ class QLambdaAgent:
             # placing bomb is possible
             bomb_x, bomb_y = current_position
             board_with_own_bomb[bomb_x, bomb_y] = 3
+            board_only_own_bomb[bomb_x, bomb_y] = 3
             for i in range(1, settings.BOMB_POWER + 1):
                 if board_with_own_bomb[bomb_x + i, bomb_y] == self.WALL_VALUE:
                     break
@@ -578,7 +568,7 @@ class QLambdaAgent:
 
         feature14 = np.zeros(len(self.actions))
         
-        shortest_path_enemy = self._shortest_path(board_without_explosion, current_position, self.ENEMY_VALUE)
+        shortest_path_enemy = self._shortest_path(board_without_explosion, current_position, self.ENEMY_VALUE, free_tiles=(self.FREE_VALUE, self.ENEMY_VALUE))
 
         if shortest_path_enemy is None:
             return feature14
@@ -638,8 +628,6 @@ class QLambdaAgent:
             return paths
 
     def _get_dead_ends(self, board):
-        board_with_dead_ends = board.copy()
-
         dead_ends = [(x, y) for x in range(1,16) for y in range(1, 16)
                         if board[x, y] == self.FREE_VALUE
                         and [board[x, y - 1],
@@ -683,3 +671,19 @@ class QLambdaAgent:
             return (pos[0], pos[1] + 1)
         elif action == "LEFT":
             return (pos[0] - 1, pos[1])
+
+    def _action_is_valid(self, game_state: dict, action):
+        if action == 'BOMB':
+            return game_state['self'][2]
+        elif action == 'WAIT':
+            return True
+        else:
+            board = game_state['field'].copy()
+            for enemy in game_state['others']:
+                board[enemy[3]] = self.ENEMY_VALUE
+            for bomb in game_state['bombs']:
+                board[bomb[0]] = self.BOMB_VALUE
+
+            if board[self._position_after_action(game_state['self'][3], action)] != self.FREE_VALUE:
+                return False
+            return True
