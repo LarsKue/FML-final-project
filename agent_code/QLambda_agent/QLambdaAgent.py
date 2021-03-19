@@ -954,5 +954,5 @@ class QLambdaAgent:
             enemies
         ], axis=-1)
 
-        return np.expand_dims(observation, axis=0).flatten()
+        return np.expand_dims(observation, axis=0)
 
