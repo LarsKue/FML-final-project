@@ -3,13 +3,15 @@ from .agents import DQBase, DQTrainer
 from .utils import timer
 
 import numpy as np
-import os
+from pathlib import Path
+import shutil
 
 
 def setup(self):
 
     use_existing_model = False
-    self.model_path = "model"
+    self.model_path = Path("coins")
+    overwrite = True
 
     if use_existing_model:
         print("Using Existing Model:", self.model_path)
@@ -20,14 +22,35 @@ def setup(self):
             self.agent = DQBase.load(self.model_path)
     else:
         print("Creating Fresh Model from Scratch")
-        self.model_path = self.model_path + "_fresh"
+        if self.model_path.is_dir():
+            if overwrite:
+                # overwrite if the model already exists
+                print("Deleting previous model...")
+                shutil.rmtree(self.model_path)
+            else:
+                raise FileExistsError("Model already exists. Set overwrite = True to ignore this error.")
+
         actions = np.array(["UP", "DOWN", "LEFT", "RIGHT", "BOMB", "WAIT"])
         peaceful_actions = np.array(["UP", "DOWN", "LEFT", "RIGHT", "WAIT"])
-        self.agent = DQTrainer(actions=actions, epsilon=1.0)
+        self.agent = DQTrainer(actions=actions)
+
+    if not self.train:
+        self.agent.epsilon = 0
+
+    self.figures_path = self.model_path / Path("figures")
+    self.data_path = self.model_path / Path("data")
+
+    self.model_path.mkdir(exist_ok=True)
+    self.figures_path.mkdir(exist_ok=True)
+    self.data_path.mkdir(exist_ok=True)
 
 
 def act(self, game_state: dict):
 
-    action = self.agent.act(game_state)
+    action, prediction = self.agent.act(game_state)
+
+    if self.train:
+        self.predictions.append(prediction)
+        self.last_episode_predictions.append(prediction)
 
     return action

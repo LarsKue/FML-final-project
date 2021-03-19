@@ -9,14 +9,14 @@ def main():
     train = 1
     agents = [
         "lars_agent",
-        "rule_based_agent",
-        "rule_based_agent",
-        "rule_based_agent"
+        # "rule_based_agent",
+        # "rule_based_agent",
+        # "rule_based_agent"
     ]
 
     gui = False
 
-    n_rounds = 1000
+    n_rounds = 100000
 
     args = [sys.executable, "main.py", mode, "--agents", *agents, "--train", str(train), "--n-rounds", str(n_rounds)]
 

@@ -19,17 +19,43 @@ def softmin(a):
 
 
 def discount(a, gamma):
-    return gamma ** np.arange(0, len(a)) * a
+    return gamma ** np.arange(len(a)) * a
 
 
-def find_loss(values, actions, rewards):
-    likelihood = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        logits=values, labels=actions
+def returns(a, gamma):
+    return np.cumsum(discount(a, gamma)[::-1])[::-1]
+
+
+def find_loss(logits, actions, returns):
+    """
+    :param logits: Model logits (predictions)
+    :param actions: Current model response
+    :param returns: Discounted Sum of Rewards in the remainder of the episode
+    """
+    # target response is computed using current guess for Q
+    # optimize Q using cross entropy loss, with returns as weights
+    # loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    #     logits=logits, labels=actions
+    # )
+
+    # loss = tf.nn.weighted_cross_entropy_with_logits(
+    #     logits=logits, labels=actions, pos_weight=returns
+    # )
+
+    loss = tf.nn.sigmoid_cross_entropy_with_logits(
+        logits=logits, labels=actions
     )
 
-    loss = tf.reduce_mean(likelihood * rewards)
+    print(loss)
+    print(loss.shape)
+
+    loss = tf.reduce_mean(loss * returns)
 
     return loss
+
+
+def rolling_mean(x, n):
+    return np.convolve(x, np.ones(n), "valid") / n
 
 
 def all_equal(*a):
