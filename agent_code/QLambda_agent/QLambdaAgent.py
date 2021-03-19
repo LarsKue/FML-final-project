@@ -2,6 +2,9 @@ from typing import List
 import numpy as np
 from collections import deque
 
+import pickle
+import settings as s
+
 import events as e
 import settings
 
@@ -14,7 +17,8 @@ class QLambdaAgent:
         # self.weights = np.array([2, 2, -1, 3, -3, 1, -1, 3, -1, 1, 1, 1, 1, -1], dtype=float).T
         # self.weights = np.array([1, 1, -1, 1, -1, 1, -1, 1, -1, 1, 1, 1, 1, -1], dtype=float).T
         if weights is None:
-            self.weights = np.array([1, 1, -1, 1, -1, 1, -1, 1, -1, 1, 1, 1, 1, -1], dtype=float).T
+            # np.array([1, 1, -1, 1, -1, 1, -1, 1, -1, 1, 1, 1, 1, -1], dtype=float).T
+            self.weights = np.zeros(self.num_features)
         else:
             self.weights = weights
 
@@ -57,8 +61,15 @@ class QLambdaAgent:
             self.experience_buffer = [[]]
 
             self.update_number = 0
-            self.weights_updates = np.zeros((20001, self.num_features))
+            self.weights_updates = np.zeros((2001, self.num_features))
             self.weights_updates[0] = self.weights
+
+            self.observations = []
+            self.observation_save = 0
+            self.new_observation = None
+            self.chosen_action = []
+            self.event_array = []
+
 
     def act(self, game_state: dict):
         if game_state['step'] == 1:
@@ -94,6 +105,36 @@ class QLambdaAgent:
             self.action_was_random
         ])
 
+
+        if old_game_state is None:
+            old_game_state_observation = self.new_observation
+            self.new_observation = None
+        else:
+            old_game_state_observation = self._observation(old_game_state)
+            self.new_observation = self._observation(new_game_state)
+    
+        self.observations.append(old_game_state_observation)
+        self.chosen_action.append(action)
+        self.event_array.append(", ".join(events))
+
+        if old_game_state is None and new_game_state['round'] % 500 == 0:
+            self.observations = np.array(self.observations)
+            self.observation_save += 1
+            np.save(f"training_data/observations_{self.observation_save}", self.observations)
+
+            with open(f"training_data/actions_{self.observation_save}", "wb") as fp:
+                pickle.dump(self.chosen_action, fp)
+
+            with open(f"training_data/events_{self.observation_save}", "wb") as fp:
+                pickle.dump(self.event_array, fp)
+
+            self.observations = []
+            self.chosen_action = []
+            self.event_array = []
+        
+
+
+
     def update_weights(self):
         self._Watkins_QLambda()
 
@@ -127,10 +168,6 @@ class QLambdaAgent:
 
         action = self.actions[np.random.choice(best_actions)]
 
-        #print("\n")
-        #print(np.round(features, 3))
-        #print(q)
-
         return action
 
     def _calculate_reward(self, events: List[str]):
@@ -148,9 +185,9 @@ class QLambdaAgent:
             elif event == e.KILLED_OPPONENT:
                 reward += 500
             elif event == e.KILLED_SELF:
-                reward += -300              # sd == KILLED_SELF + GOT_KILLED => reward(sd) = -1000
+                reward += 0              # sd == KILLED_SELF + GOT_KILLED => reward(sd) = -1250
             elif event == e.GOT_KILLED:
-                reward += -700
+                reward += -1000
 
         return reward / 100
 
@@ -174,12 +211,12 @@ class QLambdaAgent:
     def _get_features(self, game_state: dict):
         coins = game_state['coins']
         enemies = [enemy[3] for enemy in game_state['others']]
-        bombs = [bomb[0] for bomb in game_state['bombs']]
+        bombs = game_state['bombs']
         current_position = game_state['self'][3]
         bomb_is_possible = game_state['self'][2]
         next_positions = [self._position_after_action(current_position, action) for action in self.actions]
         board = game_state['field'].copy()
-        
+
         board_with_dead_ends = self._get_dead_ends(board)
 
         # board:
@@ -191,7 +228,7 @@ class QLambdaAgent:
         #   4:  explosion area (assume that bomb will explode next step)
         #   5:  explosion area of own bomb, placed on current_position (if possible)
 
-        for bomb in bombs:
+        for bomb, timer in bombs:
             board[bomb] = self.BOMB_VALUE
         for enemy in enemies:
             board[enemy] = self.ENEMY_VALUE
@@ -202,27 +239,42 @@ class QLambdaAgent:
         for coin in coins:
             board_with_coins[coin] = self.COIN_VALUE
 
-        for (bomb_x, bomb_y) in bombs:
+        explosion_timer_map = {}
+
+        for (bomb_x, bomb_y), timer in bombs:
+            explosion_timer_map[(bomb_x, bomb_y)] = min(timer, explosion_timer_map.get((bomb_x, bomb_y), 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board[bomb_x + i, bomb_y] == self.WALL_VALUE:
+                coord = (bomb_x + i, bomb_y)
+                if board[coord] == self.WALL_VALUE:
                     break
-                if board[bomb_x + i, bomb_y] == self.FREE_VALUE:
-                    board[bomb_x + i, bomb_y] = self.ENEMY_EXPLOSION_VALUE
+                if board[coord] == self.FREE_VALUE:
+                    board[coord] = self.ENEMY_EXPLOSION_VALUE
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board[bomb_x - i, bomb_y] == self.WALL_VALUE:
+                coord = (bomb_x - i, bomb_y)
+                if board[coord] == self.WALL_VALUE:
                     break
-                if board[bomb_x - i, bomb_y] == self.FREE_VALUE:
-                    board[bomb_x - i, bomb_y] = self.ENEMY_EXPLOSION_VALUE
+                if board[coord] == self.FREE_VALUE:
+                    board[coord] = self.ENEMY_EXPLOSION_VALUE
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board[bomb_x, bomb_y + i] == self.WALL_VALUE:
+                coord = (bomb_x, bomb_y + i)
+                if board[coord] == self.WALL_VALUE:
                     break
-                if board[bomb_x, bomb_y + i] == self.FREE_VALUE:
-                    board[bomb_x, bomb_y + i] = self.ENEMY_EXPLOSION_VALUE
+                if board[coord] == self.FREE_VALUE:
+                    board[coord] = self.ENEMY_EXPLOSION_VALUE
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board[bomb_x, bomb_y - i] == self.WALL_VALUE:
+                coord = (bomb_x, bomb_y - i)
+                if board[coord] == self.WALL_VALUE:
                     break
-                if board[bomb_x, bomb_y - i] == self.FREE_VALUE:
-                    board[bomb_x, bomb_y - i] = self.ENEMY_EXPLOSION_VALUE
+                if board[coord] == self.FREE_VALUE:
+                    board[coord] = self.ENEMY_EXPLOSION_VALUE
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
 
         board_with_own_bomb = board.copy()
         board_only_own_bomb = board_without_explosion.copy()
@@ -231,52 +283,65 @@ class QLambdaAgent:
         if bomb_is_possible or self.previous_action == 'BOMB':
             # placing bomb is possible
             bomb_x, bomb_y = current_position
-            board_with_own_bomb[bomb_x, bomb_y] = 3
-            board_only_own_bomb[bomb_x, bomb_y] = 3
+            board_with_own_bomb[current_position] = 3
+            board_only_own_bomb[current_position] = 3
+            explosion_timer_map[current_position] = min(4, explosion_timer_map.get(current_position, 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board_with_own_bomb[bomb_x + i, bomb_y] == self.WALL_VALUE:
+                coord = (bomb_x + i, bomb_y)
+                if board_with_own_bomb[coord] == self.WALL_VALUE:
                     break
-                if board_with_own_bomb[bomb_x + i, bomb_y] == self.FREE_VALUE:
-                    board_with_own_bomb[bomb_x + i, bomb_y] = self.OWN_EXPLOSION_VALUE
-                if board_only_own_bomb[bomb_x + i, bomb_y] == self.FREE_VALUE:
-                    board_only_own_bomb[bomb_x + i, bomb_y] = self.OWN_EXPLOSION_VALUE
-                if board_with_own_bomb[bomb_x + i, bomb_y] == self.CRATE_VALUE:
+                if board_with_own_bomb[coord] == self.FREE_VALUE:
+                    board_with_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_only_own_bomb[coord] == self.FREE_VALUE:
+                    board_only_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_with_own_bomb[coord] == self.CRATE_VALUE:
                     hit_crates = True
-                if board_with_own_bomb[bomb_x + i, bomb_y] == self.ENEMY_VALUE:
+                if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
+                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board_with_own_bomb[bomb_x - i, bomb_y] == self.WALL_VALUE:
+                coord = (bomb_x - i, bomb_y)
+                if board_with_own_bomb[coord] == self.WALL_VALUE:
                     break
-                if board_with_own_bomb[bomb_x - i, bomb_y] == self.FREE_VALUE:
-                    board_with_own_bomb[bomb_x - i, bomb_y] = self.OWN_EXPLOSION_VALUE
-                if board_only_own_bomb[bomb_x - i, bomb_y] == self.FREE_VALUE:
-                    board_only_own_bomb[bomb_x - i, bomb_y] = self.OWN_EXPLOSION_VALUE
-                if board_with_own_bomb[bomb_x - i, bomb_y] == self.CRATE_VALUE:
+                if board_with_own_bomb[coord] == self.FREE_VALUE:
+                    board_with_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_only_own_bomb[coord] == self.FREE_VALUE:
+                    board_only_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_with_own_bomb[coord] == self.CRATE_VALUE:
                     hit_crates = True
-                if board_with_own_bomb[bomb_x - i, bomb_y] == self.ENEMY_VALUE:
+                if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
+                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board_with_own_bomb[bomb_x, bomb_y + i] == self.WALL_VALUE:
+                coord = (bomb_x, bomb_y + i)
+                if board_with_own_bomb[coord] == self.WALL_VALUE:
                     break
-                if board_with_own_bomb[bomb_x, bomb_y + i] == self.FREE_VALUE:
-                    board_with_own_bomb[bomb_x, bomb_y + i] = self.OWN_EXPLOSION_VALUE
-                if board_only_own_bomb[bomb_x, bomb_y + i] == self.FREE_VALUE:
-                    board_only_own_bomb[bomb_x, bomb_y + i] = self.OWN_EXPLOSION_VALUE
-                if board_with_own_bomb[bomb_x, bomb_y + i] == self.CRATE_VALUE:
+                if board_with_own_bomb[coord] == self.FREE_VALUE:
+                    board_with_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_only_own_bomb[coord] == self.FREE_VALUE:
+                    board_only_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_with_own_bomb[coord] == self.CRATE_VALUE:
                     hit_crates = True
-                if board_with_own_bomb[bomb_x, bomb_y + i] == self.ENEMY_VALUE:
+                if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
+                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
+
             for i in range(1, settings.BOMB_POWER + 1):
-                if board_with_own_bomb[bomb_x, bomb_y - i] == self.WALL_VALUE:
+                coord = (bomb_x, bomb_y - i)
+                if board_with_own_bomb[coord] == self.WALL_VALUE:
                     break
-                if board_with_own_bomb[bomb_x, bomb_y - i] == self.FREE_VALUE:
-                    board_with_own_bomb[bomb_x, bomb_y - i] = self.OWN_EXPLOSION_VALUE
-                if board_only_own_bomb[bomb_x, bomb_y - i] == self.FREE_VALUE:
-                    board_only_own_bomb[bomb_x, bomb_y - i] = self.OWN_EXPLOSION_VALUE
-                if board_with_own_bomb[bomb_x, bomb_y - i] == self.CRATE_VALUE:
+                if board_with_own_bomb[coord] == self.FREE_VALUE:
+                    board_with_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_only_own_bomb[coord] == self.FREE_VALUE:
+                    board_only_own_bomb[coord] = self.OWN_EXPLOSION_VALUE
+                if board_with_own_bomb[coord] == self.CRATE_VALUE:
                     hit_crates = True
-                if board_with_own_bomb[bomb_x, bomb_y - i] == self.ENEMY_VALUE:
+                if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
+                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
 
         return np.stack([
             # + move towards coin
@@ -288,7 +353,7 @@ class QLambdaAgent:
             # + move out of explosion area
             self._feature_4(board, current_position, next_positions),
             # - move/stay in explosion area
-            self._feature_5(board, current_position, next_positions),
+            self._feature_5(board, explosion_timer_map, current_position, next_positions),
             # + move towards crate
             self._feature_6(board_without_explosion, current_position, next_positions),
             # - bomb is suicidal
@@ -333,11 +398,11 @@ class QLambdaAgent:
 
     def _feature_1(self, board_with_coins, board_without_explosion, current_position, next_positions):
         # number of steps to coin in direction
-        
+
         feature1 = np.zeros(len(self.actions))
 
         value_of_current_position = board_with_coins[current_position]
-        board_with_coins[current_position] = 10 # cannot go back to this tile
+        board_with_coins[current_position] = 10     # cannot go back to this tile
 
         for i, next_position in enumerate(next_positions):
             if self.actions[i] == 'WAIT' or self.actions[i] == 'BOMB':
@@ -351,7 +416,7 @@ class QLambdaAgent:
 
             path_length = len(shortest_path_coins[0]) + 1
             feature1[i] = path_length
-        
+
         if np.count_nonzero(feature1) == 0:
             return feature1
 
@@ -418,7 +483,7 @@ class QLambdaAgent:
 
         return feature4
 
-    def _feature_5(self, board, current_position, next_positions):
+    def _feature_5_old(self, board, current_position, next_positions):
         # move/stay in explosion area
 
         feature5 = np.zeros(len(self.actions))
@@ -436,6 +501,33 @@ class QLambdaAgent:
             for i, next_position in enumerate(next_positions):
                 if next_position not in best_next_positions:
                     feature5[i] = 1
+
+        return feature5
+
+    def _feature_5(self, board, explosion_timer_map, current_position, next_positions):
+        # move/stay in explosion area
+
+        # bomb timer     feature
+        #     4            0.25
+        #     3            0.5
+        #     2            0.75
+        #     1            1.0
+        feature5 = np.zeros(len(self.actions))
+
+        if board[current_position] == self.FREE_VALUE:
+            for i, next_position in enumerate(next_positions):
+                if board[next_position] in (self.ENEMY_EXPLOSION_VALUE, self.OWN_EXPLOSION_VALUE):
+                    feature5[i] = (5 - explosion_timer_map[next_position]) / 4.
+            return feature5
+
+        paths_out_of_explosion = self._shortest_path(board, current_position, self.FREE_VALUE, free_tiles=(self.FREE_VALUE, self.ENEMY_EXPLOSION_VALUE, self.OWN_EXPLOSION_VALUE))
+
+        if paths_out_of_explosion is not None:
+            best_next_positions = [path[1] for path in paths_out_of_explosion]
+            for i, next_position in enumerate(next_positions):
+                if next_position not in best_next_positions:
+                    min_bomb_timer = min(explosion_timer_map[current_position], explosion_timer_map.get(next_position, 4))
+                    feature5[i] = (5 - min_bomb_timer) / 4.
 
         return feature5
 
@@ -469,23 +561,22 @@ class QLambdaAgent:
                 return np.zeros(len(self.actions))
 
         value_of_current_position = board_without_explosion[current_position]
-        board_without_explosion[current_position] = 10 # cannot go back to this tile
+        board_without_explosion[current_position] = 10      # cannot go back to this tile
 
         for i, next_position in enumerate(next_positions):
             if board_without_explosion[next_position] != self.FREE_VALUE:
                 continue
-            
+
             shortest_path_crates = self._shortest_path(board_without_explosion, next_position, self.CRATE_VALUE, free_tiles=(self.FREE_VALUE, self.CRATE_VALUE))
-            
+
             if shortest_path_crates is None:
                 continue
-            
+
             if len(shortest_path_crates[0]) == 2:
                 # len==2 => standing next to crate
                 feature6[i] = 1
             else:
                 feature6[i] = len(shortest_path_crates[0]) - 1
-
 
         if np.count_nonzero(feature6) == 0:
             return feature6
@@ -539,6 +630,7 @@ class QLambdaAgent:
 
     def _feature_9(self, board_with_own_bomb, current_position, next_positions):
         # walk into dead_end (only if previous action was 'BOMB')
+        return np.zeros(len(self.actions))
 
         feature9 = np.zeros(len(self.actions))
 
@@ -589,23 +681,22 @@ class QLambdaAgent:
                 return np.zeros(len(self.actions))
 
         value_of_current_position = board_without_explosion[current_position]
-        board_without_explosion[current_position] = 10 # cannot go back to this tile
+        board_without_explosion[current_position] = 10      # cannot go back to this tile
 
         for i, next_position in enumerate(next_positions):
             if board_without_explosion[next_position] != self.FREE_VALUE:
                 continue
-            
+
             shortest_path_enemies = self._shortest_path(board_without_explosion, next_position, self.ENEMY_VALUE, free_tiles=(self.FREE_VALUE, self.ENEMY_VALUE))
-            
+
             if shortest_path_enemies is None:
                 continue
-            
+
             if len(shortest_path_enemies[0]) == 2:
                 # len==2 => standing next to enemy
                 feature10[i] = 1
             else:
                 feature10[i] = len(shortest_path_enemies[0]) - 1
-
 
         if np.count_nonzero(feature10) == 0:
             return feature10
@@ -673,6 +764,7 @@ class QLambdaAgent:
 
     def _feature_13(self, board_with_dead_ends, enemies, current_position, bomb_is_possible, enemy_inside_explosion_area):
         # place bomb if enemy is in explosion area and in dead end
+        return np.zeros(len(self.actions))
 
         feature13 = np.zeros(len(self.actions))
 
@@ -686,23 +778,23 @@ class QLambdaAgent:
                 continue
             if direction[abs(1 - direction.index(0))] > settings.BOMB_POWER:
                 continue
-            
+
             if board_with_dead_ends[enemies[i]] == self.DEAD_END_VALUE:
                 feature13[self.action_indices['BOMB']] = 1
                 break
-            
+
         return feature13
 
     def _feature_14(self, board_with_dead_ends, board_without_explosion, current_position, next_positions):
         # go into dead end if enemy is nearby
 
         feature14 = np.zeros(len(self.actions))
-        
+
         shortest_path_enemy = self._shortest_path(board_without_explosion, current_position, self.ENEMY_VALUE, free_tiles=(self.FREE_VALUE, self.ENEMY_VALUE))
 
         if shortest_path_enemy is None:
             return feature14
-            
+
         path_length = len(shortest_path_enemy[0])
         if path_length > 4:
             return feature14
@@ -758,15 +850,12 @@ class QLambdaAgent:
             return paths
 
     def _get_dead_ends(self, board):
-        dead_ends = [(x, y) for x in range(1,16) for y in range(1, 16)
-                        if board[x, y] == self.FREE_VALUE
-                        and [board[x, y - 1],
-                            board[x + 1, y],
-                            board[x, y + 1],
-                            board[x - 1, y]].count(0) == 1]
-        
+        dead_ends = [(x, y) for x in range(1, 16) for y in range(1, 16)
+                     if board[x, y] == self.FREE_VALUE
+                     and [board[x, y - 1], board[x + 1, y], board[x, y + 1], board[x - 1, y]].count(0) == 1]
+
         neighbor_indices = np.array([np.array([0, -1]), np.array([1, 0]), np.array([0, 1]), np.array([-1, 0])])
-        
+
         board_with_dead_ends = board.copy()
 
         for dead_end in dead_ends:
@@ -817,3 +906,53 @@ class QLambdaAgent:
             if board[self._position_after_action(game_state['self'][3], action)] != self.FREE_VALUE:
                 return False
             return True
+
+    def _observation(self, state: dict) -> np.ndarray:
+        # different approach:
+        # like with chess, transform the state into
+        # an M x N x K board with each K-layer
+        # being a flag for what is there:
+        # walls
+        # crates
+        # bombs
+        # coins
+        # the player
+        # enemies
+
+        # walls and crates are given by the 'field' in the state
+        walls = (state["field"] == -1).astype(float)
+        crates = (state["field"] == 1).astype(float)
+
+        # bombs and coins are individual positions
+        bombs = np.zeros((s.COLS, s.ROWS), dtype=float)
+        coins = np.zeros((s.COLS, s.ROWS), dtype=float)
+
+        for b in state["bombs"]:
+            bombs[b[0][0], b[0][1]] = (5. - b[1]) / 4.
+
+        for c in state["coins"]:
+            coins[c[0], c[1]] = 1.0
+
+        player = np.zeros((s.COLS, s.ROWS), dtype=float)
+
+        p = state["self"][3]
+
+        player[p[0], p[1]] = 1.0 if state["self"][2] else -1.0
+
+        enemies = np.zeros((s.COLS, s.ROWS), dtype=float)
+
+        for o in state["others"]:
+            op = o[3]
+            enemies[op[0], op[1]] = 1.0
+
+        observation = np.stack([
+            walls,
+            crates,
+            bombs,
+            coins,
+            player,
+            enemies
+        ], axis=-1)
+
+        return np.expand_dims(observation, axis=0).flatten()
+
