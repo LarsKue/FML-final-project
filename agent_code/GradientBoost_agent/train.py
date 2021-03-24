@@ -35,7 +35,8 @@ def setup_training(self):
 
     self.alpha = 0.1
 
-    self.discout = 0.9
+    self.discount = 0.9
+    self.lambda_et = 0.9
     
     
     self.action_indices = {
@@ -46,9 +47,11 @@ def setup_training(self):
         'WAIT': 4,
         'BOMB': 5,
     }
+    
+    self.action_was_random = False
 
     self.experience_buffer = []
-    self.batch_size = 5000
+    self.episode = []
 
     #self.model = MultiOutputRegressor(LGBMRegressor(n_estimators=30))
     #self.model = RandomForestRegressor(n_estimators=30)
@@ -64,12 +67,12 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         return
 
 
-    self.experience_buffer.append([
-        observation(self, old_game_state),
+    self.episode.append([
+        get_features(self, old_game_state),
         self_action,
         calculate_reward(events),
-        observation(self, new_game_state),
-        False
+        get_features(self, new_game_state),
+        self.action_was_random
     ])
 
 
@@ -77,21 +80,23 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     
-    self.experience_buffer.append([
-        self.experience_buffer[-1][3],
+    self.episode.append([
+        self.episode[-1][3],
         last_action,
         calculate_reward(events),
-        observation(self, last_game_state),
-        True
+        get_features(self, last_game_state),
+        self.action_was_random
     ])
+
+    self.experience_buffer.append(self.episode)
+    self.episode = []
 
     
     
     if last_game_state['round'] < 10 or last_game_state['round'] % 50 == 0:
-        experience_replay(self)
-        self.batch_size += 2000
-        self.batch_size = min(self.batch_size, 20000)
-
+        Watkins_QLambda(self)
+        self.experience_buffer = []
+        
         self.epsilon *= self.epsilon_decrease
         self.epsilon = max(self.epsilon, 0.1)
 
@@ -100,10 +105,6 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
         
         print("\n", self.epsilon, self.alpha)
-
-
-    if last_game_state['round'] > 0 and last_game_state['round'] % 1000 == 0:
-        self.experience_buffer = []
 
     
     
@@ -135,11 +136,13 @@ def calculate_reward(events: List[str]):
 def epsilon_greedy(self, game_state: dict):
 
     if not self.is_fit or np.random.uniform() < self.epsilon:
+        self.action_was_random = True
         return np.random.choice(ACTIONS)
 
     else:
+        self.action_was_random = False
         
-        features = observation(self, game_state)
+        features = get_features(self, game_state)
 
         q = self.model.predict([features])[0]
 
@@ -155,6 +158,41 @@ def act_train(self, game_state: dict):
     action = epsilon_greedy(self, game_state)
     return action
 
+
+def Watkins_QLambda(self):
+    X = []
+    targets = []
+
+    for episode in self.experience_buffer:
+        eligibility_trace = 0
+
+        for old_state, action, reward, new_state, action_was_random in episode:
+
+            delta = reward
+            if self.is_fit:
+                q_values = self.model.predict([old_state])
+
+                delta -= q_values[0][self.action_indices[action]]
+                delta += self.discount * np.max(self.model.predict([new_state])[0])
+
+            else:
+                q_values = np.zeros(len(ACTIONS)).reshape(1, -1)
+
+            eligibility_trace += 1
+
+            q_values[0][self.action_indices[action]] += self.alpha * delta * eligibility_trace
+
+
+            X.append(old_state)
+            targets.append(q_values[0])
+
+            if action_was_random:
+                eligibility_trace = 0
+            else:
+                eligibility_trace *= self.discount * self.lambda_et
+
+    self.model.fit(X, targets)
+    self.is_fit = True
 
 
 def experience_replay(self):
@@ -172,7 +210,7 @@ def experience_replay(self):
         Y_i = reward
         if not is_terminal and self.is_fit:
             #print(action, reward, self.model.predict([new_state])[0])
-            Y_i += self.discout * np.max(self.model.predict([new_state])[0])
+            Y_i += self.discount * np.max(self.model.predict([new_state])[0])
         
         if self.is_fit:
             q_values = self.model.predict([old_state])
@@ -194,54 +232,3 @@ def experience_replay(self):
 
     self.model.fit(X, targets)
     self.is_fit = True
-
-
-
-def observation(self, state: dict) -> np.ndarray:
-    # different approach:
-    # like with chess, transform the state into
-    # an M x N x K board with each K-layer
-    # being a flag for what is there:
-    # walls
-    # crates
-    # bombs
-    # coins
-    # the player
-    # enemies
-
-    # walls and crates are given by the 'field' in the state
-    walls = (state["field"] == -1).astype(float)
-    crates = (state["field"] == 1).astype(float)
-
-    # bombs and coins are individual positions
-    bombs = np.zeros((s.COLS, s.ROWS), dtype=float)
-    coins = np.zeros((s.COLS, s.ROWS), dtype=float)
-
-    for b in state["bombs"]:
-        bombs[b[0][0], b[0][1]] = (5. - b[1]) / 4.
-
-    for c in state["coins"]:
-        coins[c[0], c[1]] = 1.0
-
-    player = np.zeros((s.COLS, s.ROWS), dtype=float)
-
-    p = state["self"][3]
-
-    player[p[0], p[1]] = 1.0 if state["self"][2] else -1.0
-
-    enemies = np.zeros((s.COLS, s.ROWS), dtype=float)
-
-    for o in state["others"]:
-        op = o[3]
-        enemies[op[0], op[1]] = 1.0
-
-    observation = np.stack([
-        walls,
-        crates,
-        bombs,
-        coins,
-        player,
-        enemies
-    ], axis=-1)
-
-    return np.expand_dims(observation, axis=0).flatten()

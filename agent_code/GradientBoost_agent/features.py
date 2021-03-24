@@ -10,6 +10,70 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 
 def get_features(self, game_state):
+    board = game_state['field']
+    current_position = game_state['self'][3]
+
+    surrounding_feature = np.ones(41) * -1
+    surrounding_index = 0
+    dx_array = [0, 1, 2, 3, 4, 3, 2, 1, 0]
+    for i, y in enumerate(range(current_position[1]-4, current_position[1]+4+1)):
+        dx_delta = dx_array[i]
+
+        if y < 0 or y >= settings.ROWS:
+            surrounding_index += 2*dx_delta + 1
+            continue
+
+        for x in range(current_position[0]-dx_delta, current_position[0]+dx_delta + 1):
+            if x < 0 or x >= settings.COLS:
+                surrounding_index += 1
+                continue
+
+            surrounding_feature[surrounding_index] = board[x, y]
+            surrounding_index += 1
+
+
+
+    self_feature = np.ones(2+1)
+    self_feature[0] = current_position[0]
+    self_feature[1] = current_position[1]
+    self_feature[2] = int(game_state['self'][2])
+            
+
+    bomb_feature = np.ones(3*4) * 100       # 100 for non-existing bombs (arbitrary value > 15 or < -15)
+    for i, (bomb, timer) in enumerate(game_state['bombs']):
+        bomb_feature[3*i+0] = current_position[0] - bomb[0]
+        bomb_feature[3*i+1] = current_position[1] - bomb[1]
+        bomb_feature[3*i+2] = timer
+
+    
+    enemy_feature = np.ones(2*3) * 101       # 101 for dead enemies (arbitrary value > 15 or < -15)
+    for i, (_, _, _, enemy) in enumerate(game_state['others']):
+        enemy_feature[2*i+0] = current_position[0] - enemy[0]
+        enemy_feature[2*i+1] = current_position[1] - enemy[1]
+
+    
+    coin_feature = np.ones(9*2) * 102       # 102 for non-existing coins (arbitrary value > 15 or < -15)
+    for i, (coin) in enumerate(game_state['coins']):
+        coin_feature[2*i+0] = current_position[0] - coin[0]
+        coin_feature[2*i+1] = current_position[1] - coin[1]
+
+
+    return np.concatenate([
+        surrounding_feature,
+        self_feature,
+        bomb_feature,
+        enemy_feature,
+        coin_feature
+    ])
+
+    
+
+
+
+
+
+
+def get_features_old(self, game_state):
 
     board = game_state['field'].copy()
     current_position = game_state['self'][3]
