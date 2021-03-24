@@ -72,7 +72,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         self_action,
         calculate_reward(events),
         get_features(self, new_game_state),
-        self.action_was_random
+        False
     ])
 
 
@@ -85,7 +85,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         last_action,
         calculate_reward(events),
         get_features(self, last_game_state),
-        self.action_was_random
+        True
     ])
 
     self.experience_buffer.append(self.episode)
@@ -94,7 +94,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     
     
     if last_game_state['round'] < 10 or last_game_state['round'] % 50 == 0:
-        Watkins_QLambda(self)
+        experience_replay(self)
         self.experience_buffer = []
         
         self.epsilon *= self.epsilon_decrease
