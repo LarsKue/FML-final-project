@@ -85,17 +85,20 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.agent.reward(last_game_state, last_action, None, events)
 
     gamma = 0.98
-    batch_size = 500
+    batch_size = 32
     reduce = 1024  # MB
 
     reduce = 1e6 * reduce / (17 * 17 * 6 * 4)
     reduce = int(reduce)
 
+    if batch_size > reduce:
+        raise RuntimeError(f"Batch size cannot be greater than maximum memory size: {batch_size} vs {reduce}")
+
     steps = last_game_state["step"]
 
     def update_epsilon(e):
         min_e = 0.01
-        sink_rate = 1e-4
+        sink_rate = 1e-1
         if e > min_e:
             return e * (1 / (1 + sink_rate * e))
         return min_e
@@ -112,7 +115,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.steps_taken.append(steps)
 
     print("Finished round", r)
-    if r % 50 == 0:
+    if r % 30 == 0:
         print("Saving Agent...")
         # save the agent to disk
         self.agent.save(self.model_path)

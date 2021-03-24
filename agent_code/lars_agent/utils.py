@@ -26,32 +26,30 @@ def returns(a, gamma):
     return np.cumsum(discount(a, gamma)[::-1])[::-1]
 
 
+# def find_loss(logits, actions, returns):
+#     """
+#     :param logits: Model logits (predictions)
+#     :param actions: Current model response
+#     :param returns: Discounted Sum of Rewards in the remainder of the episode
+#     """
+#     # target response is computed using current guess for Q
+#     # optimize Q using cross entropy loss, with returns as weights
+#     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+#         logits=logits, labels=actions
+#     )
+#
+#     loss = tf.reduce_mean(loss * returns)
+#
+#     return loss
+
+
 def find_loss(logits, actions, returns):
-    """
-    :param logits: Model logits (predictions)
-    :param actions: Current model response
-    :param returns: Discounted Sum of Rewards in the remainder of the episode
-    """
-    # target response is computed using current guess for Q
-    # optimize Q using cross entropy loss, with returns as weights
-    # loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-    #     logits=logits, labels=actions
-    # )
+    y_true = actions
+    y_pred = tf.math.argmax(logits, axis=-1)
 
-    # loss = tf.nn.weighted_cross_entropy_with_logits(
-    #     logits=logits, labels=actions, pos_weight=returns
-    # )
+    likelihood = tf.keras.losses.mean_squared_error(y_true, y_pred)
 
-    loss = tf.nn.sigmoid_cross_entropy_with_logits(
-        logits=logits, labels=actions
-    )
-
-    print(loss)
-    print(loss.shape)
-
-    loss = tf.reduce_mean(loss * returns)
-
-    return loss
+    return likelihood
 
 
 def rolling_mean(x, n):

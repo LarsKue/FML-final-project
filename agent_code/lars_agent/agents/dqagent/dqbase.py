@@ -61,7 +61,9 @@ class DQBase:
         # choose action according to probability distribution
         # this is equivalent to
         # action = np.random.choice(np.arange(len(self.actions)), p=prediction)
-        action = int(tf.random.categorical(logits, num_samples=1))
+        # action = int(tf.random.categorical(logits, num_samples=1))
+
+        action = np.argmax(prediction)
 
         return observation, prediction, action
 
@@ -97,7 +99,7 @@ class DQBase:
         coins = np.zeros((s.COLS, s.ROWS), dtype=float)
 
         for b in state["bombs"]:
-            bombs[b[0], b[1]] = 1.0
+            bombs[b[0][0], b[0][1]] = (5 - b[1]) / 4
 
         for c in state["coins"]:
             coins[c[0], c[1]] = 1.0
@@ -106,7 +108,7 @@ class DQBase:
 
         p = state["self"][3]
 
-        player[p[0], p[1]] = 1.0
+        player[p[0], p[1]] = 1.0 if state["self"][2] else -1
 
         enemies = np.zeros((s.COLS, s.ROWS), dtype=float)
 

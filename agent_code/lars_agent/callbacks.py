@@ -9,9 +9,9 @@ import shutil
 
 def setup(self):
 
-    use_existing_model = False
-    self.model_path = Path("coins")
-    overwrite = True
+    use_existing_model = True
+    self.model_path = Path("coins_test")
+    overwrite = False
 
     if use_existing_model:
         print("Using Existing Model:", self.model_path)
@@ -30,8 +30,9 @@ def setup(self):
             else:
                 raise FileExistsError("Model already exists. Set overwrite = True to ignore this error.")
 
-        actions = np.array(["UP", "DOWN", "LEFT", "RIGHT", "BOMB", "WAIT"])
-        peaceful_actions = np.array(["UP", "DOWN", "LEFT", "RIGHT", "WAIT"])
+        actions = np.array(["UP", "RIGHT", "DOWN", "LEFT", "WAIT", "BOMB"])
+        peaceful_actions = np.array(["UP", "RIGHT", "DOWN", "LEFT", "WAIT"])
+        coins_actions = np.array(["UP", "RIGHT", "DOWN", "LEFT"])
         self.agent = DQTrainer(actions=actions)
 
     if not self.train:

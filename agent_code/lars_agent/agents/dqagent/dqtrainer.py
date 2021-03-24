@@ -13,7 +13,7 @@ from ...utils import *
 
 
 class DQTrainer(DQBase):
-    def __init__(self, actions: np.ndarray, epsilon=0.5, temperature=1.0, gamma=0.99):
+    def __init__(self, actions: np.ndarray, epsilon=0.5, temperature=1.0, gamma=0.9):
         model = tf.keras.Sequential([
             # apparently, a convolutional layer combined with a maxpool layer
             # can help first identify features, and then filter for the most interesting features
@@ -41,7 +41,7 @@ class DQTrainer(DQBase):
         return DQBase(self.actions, self.model)
 
     def action_counts(self, prediction):
-        # use neural net predictions as de-facto states
+        # use neural net predictions as quasi-states
         # each action gets 5 bins, leading to 5^6 ~ 15k possible states
         # meaning we can expect a relevant effect from this method after ~150k states have been seen
         # which should happen after at most 30k episodes
@@ -67,30 +67,32 @@ class DQTrainer(DQBase):
 
         return self.actions[action], prediction
 
-    # def explore(self, state: dict) -> [np.ndarray, int]:
-    #     observation = super().observation(state)
-    #
-    #     action = np.random.choice(np.arange(len(self.actions)))
-    #
-    #     return observation, action
-
-    def explore(self, state: dict) -> [np.ndarray, np.ndarray, int]:
-        """
-        Explore the game world outside of the current policy
-        """
+    def explore(self, state: dict) -> [np.ndarray, int]:
         observation = super().observation(state)
 
         _, prediction = self.predict(observation)
 
-        action_counts = self.action_counts(prediction)
-
-        # prefer actions we have not tried much, randomized for ties
-        # values = softmin(action_counts / self.temperature)
-        values = tf.nn.softmax(-action_counts / self.temperature)
-
-        action = np.random.choice(np.arange(len(self.actions)), p=values)
+        action = np.random.choice(np.arange(len(self.actions)))
 
         return observation, prediction, action
+
+    # def explore(self, state: dict) -> [np.ndarray, np.ndarray, int]:
+    #     """
+    #     Explore the game world outside of the current policy
+    #     """
+    #     observation = super().observation(state)
+    #
+    #     _, prediction = self.predict(observation)
+    #
+    #     action_counts = self.action_counts(prediction)
+    #
+    #     # prefer actions we have not tried much, randomized for ties
+    #     # values = softmin(action_counts / self.temperature)
+    #     values = tf.nn.softmax(-action_counts / self.temperature)
+    #
+    #     action = np.random.choice(np.arange(len(self.actions)), p=values)
+    #
+    #     return observation, prediction, action
 
     # def train(self, optimizer, steps, batch_size=64, reduce=None, clear_memory=True):
     #     discounted_rewards = discount(self.memory.rewards[-steps:], self.discount)
@@ -128,8 +130,8 @@ class DQTrainer(DQBase):
     #     return loss, np.sum(discounted_rewards)
 
     def __reward(self, events):
-        # any non-listed move gives a score of -1
-        other = -2
+        # score for any non-listed move
+        other = 0
 
         # event_rewards = {
         #     e.INVALID_ACTION: -6,
@@ -155,28 +157,25 @@ class DQTrainer(DQBase):
         # }
 
         event_rewards = {
-            e.INVALID_ACTION: -10,
-            e.BOMB_DROPPED: -10,
-            e.WAITED: -7,
-            e.GOT_KILLED: -200,
-            e.COIN_COLLECTED: 100,
+            e.INVALID_ACTION: -200,
+            e.CRATE_DESTROYED: 10,
+            e.COIN_FOUND: 0,
+            e.COIN_COLLECTED: 150,
+            e.KILLED_OPPONENT: 500,
+            e.KILLED_SELF: 0,
+            e.GOT_KILLED: -1000,
         }
 
         rewards = list(map(event_rewards.get, events))
         rewards = [r if r is not None else other for r in rewards]
         reward = np.sum(rewards)
 
-        # survive_own_bomb = 5
-        #
-        # if e.SURVIVED_ROUND in events and e.BOMB_EXPLODED in events:
-        #     reward += survive_own_bomb
-
-        return reward
+        return reward / 100
 
     def reward(self, state, action, new_state, events):
         observation = self.observation(state)
         action = np.argmax(self.actions == action)
-        logits, prediction = self.predict(observation)
+        _, prediction = self.predict(observation)
         reward = self.__reward(events)
         if new_state is None:
             new_observation = None
@@ -186,7 +185,7 @@ class DQTrainer(DQBase):
         if not self.memory.episodes:
             self.memory.add_episode()
 
-        self.memory.add(observation, tf.squeeze(logits), reward, new_observation)
+        self.memory.add(observation, action, reward, new_observation)
 
         # increment action counter
         self.action_counts(prediction)[action] += 1

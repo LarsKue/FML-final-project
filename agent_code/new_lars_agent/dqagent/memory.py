@@ -5,29 +5,25 @@ from ..utils import returns as ret, all_equal
 
 
 class EpisodeMemory:
-    def __init__(self, states=None, actions=None, rewards=None, new_states=None, returns=None):
-        if states is None:
-            states = []
+    def __init__(self, observations=None, actions=None, rewards=None, returns=None):
+        if observations is None:
+            observations = []
         if actions is None:
             actions = []
         if rewards is None:
             rewards = []
-        if new_states is None:
-            new_states = []
         if returns is None:
             returns = []
 
-        self.states = list(states)
+        self.observations = list(observations)
         self.actions = list(actions)
         self.rewards = list(rewards)
-        self.new_states = list(new_states)
         self.returns = list(returns)
 
-    def add(self, state, action, reward, new_state, r=None):
-        self.states.append(state)
+    def add(self, observation, action, reward, r=None):
+        self.observations.append(observation)
         self.actions.append(action)
         self.rewards.append(reward)
-        self.new_states.append(new_state)
         if r is not None:
             self.returns.append(r)
 
@@ -38,30 +34,28 @@ class EpisodeMemory:
         return self.returns[0]
 
     def clear(self):
-        self.states = []
+        self.observations = []
         self.actions = []
         self.rewards = []
-        self.new_states = []
         self.returns = []
 
     def reduce(self, size):
         if size >= len(self):
             return
 
-        self.states = self.states[-size:]
+        self.observations = self.observations[-size:]
         self.actions = self.actions[-size:]
         self.rewards = self.rewards[-size:]
-        self.new_states = self.new_states[-size:]
         self.returns = self.returns[-size:]
 
-    def _check_complete(self):
-        if not all_equal(len(self.states), len(self.actions), len(self.rewards), len(self.new_states)):
-            raise RuntimeError("Cannot define length on incomplete Memory.")
+    def is_complete(self):
+        return all_equal(len(self.observations), len(self.actions), len(self.rewards), len(self.returns))
 
     def __len__(self):
-        self._check_complete()
+        if not self.is_complete():
+            raise RuntimeError("Cannot define length on incomplete Memory.")
 
-        return len(self.states)
+        return len(self.observations)
 
 
 class Memory(EpisodeMemory):
@@ -81,21 +75,22 @@ class Memory(EpisodeMemory):
 
     def finalize(self, gamma):
         # finalize all episodes and return their sum
-        reward = list(map(lambda e: e.finalize(gamma), self.episodes))[0]
+        discounted_reward = list(map(lambda e: e.finalize(gamma), self.episodes))[0]
 
-        return reward
+        return discounted_reward
 
     def aggregate(self):
         for episode in self.episodes:
-            self.states.extend(episode.states)
+            if not episode.is_complete():
+                raise RuntimeError("Cannot Aggregate incomplete EpisodeMemory's into Memory.")
+
+        for episode in self.episodes:
+            self.observations.extend(episode.observations)
             self.actions.extend(episode.actions)
             self.rewards.extend(episode.rewards)
-            self.new_states.extend(episode.new_states)
             self.returns.extend(episode.returns)
 
         self.episodes = []
-
-        self._check_complete()
 
     def random_batch(self, size, reduce_ok=True, keep_episodes=False):
         self.aggregate()
@@ -110,10 +105,9 @@ class Memory(EpisodeMemory):
 
         result = Memory(
             self.episodes if keep_episodes else None,
-            np.asarray(self.states)[idx],
+            np.asarray(self.observations)[idx],
             np.asarray(self.actions)[idx],
             np.asarray(self.rewards)[idx],
-            np.asarray(self.new_states)[idx],
             np.asarray(self.returns)[idx]
         )
 
@@ -123,8 +117,8 @@ class Memory(EpisodeMemory):
         self.episodes = []
         super().clear()
 
-    def _check_complete(self):
+    def is_complete(self):
         if self.episodes:
-            raise RuntimeError("Memory with un-aggregated episodes is incomplete.")
+            return False
 
-        return super()._check_complete()
+        return super().is_complete()
