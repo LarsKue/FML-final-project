@@ -1,7 +1,6 @@
 from typing import List
 import numpy as np
 from collections import deque
-from scipy.special import softmax
 
 import pickle
 import settings as s
@@ -157,12 +156,15 @@ class QLambdaAgent:
             print(f"{w:0.3f}, ", sep="", end="")
 
         print("\n", self.epsilon, self.alpha)
+        
+    def _softmax(self, x):
+        return (np.exp(x - np.max(x)) / np.sum(np.exp(x - np.max(x))))
 
     def _explore(self, game_state: dict):
         features = self._get_features(game_state)
         features_tuple = tuple(features.flatten())
         if features_tuple in self.state_action_count:
-            probabilities = softmax(-self.state_action_count[features_tuple])
+            probabilities = self._softmax(-self.state_action_count[features_tuple])
         else:
             probabilities = np.ones(len(self.actions)) / len(self.actions)
 
