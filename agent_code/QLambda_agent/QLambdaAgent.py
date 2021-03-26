@@ -1,6 +1,7 @@
 from typing import List
 import numpy as np
 from collections import deque
+from scipy.special import softmax
 
 import pickle
 import settings as s
@@ -58,18 +59,20 @@ class QLambdaAgent:
 
             self.action_was_random = False
 
+            self.state_action_count = {}
+            self.temperature = 1.0
+
             self.experience_buffer = [[]]
 
             self.update_number = 0
             self.weights_updates = np.zeros((2001, self.num_features))
             self.weights_updates[0] = self.weights
 
-            self.observations = []
-            self.observation_save = 0
-            self.new_observation = None
-            self.chosen_action = []
-            self.event_array = []
-
+            # self.observations = []
+            # self.observation_save = 0
+            # self.new_observation = None
+            # self.chosen_action = []
+            # self.event_array = []
 
     def act(self, game_state: dict):
         if game_state['step'] == 1:
@@ -93,6 +96,7 @@ class QLambdaAgent:
 
     def add_sars(self, old_game_state: dict, action: str, new_game_state: dict, events: List[str]):
         if old_game_state is None:
+            self.name = new_game_state['self'][0]
             old_game_state_features = self.experience_buffer[-1][-1][3]
         else:
             old_game_state_features = self._get_features(old_game_state)
@@ -105,14 +109,14 @@ class QLambdaAgent:
             self.action_was_random
         ])
 
-
+        """
         if old_game_state is None:
             old_game_state_observation = self.new_observation
             self.new_observation = None
         else:
             old_game_state_observation = self._observation(old_game_state)
             self.new_observation = self._observation(new_game_state)
-    
+
         self.observations.append(old_game_state_observation)
         self.chosen_action.append(action)
         self.event_array.append(", ".join(events))
@@ -131,9 +135,7 @@ class QLambdaAgent:
             self.observations = []
             self.chosen_action = []
             self.event_array = []
-        
-
-
+        """
 
     def update_weights(self):
         self._Watkins_QLambda()
@@ -147,7 +149,7 @@ class QLambdaAgent:
         self.experience_buffer = [[]]
 
         if self.update_number > 0 and self.update_number % 10 == 0:
-            np.save('weights_updates.npy', self.weights_updates)
+            np.save(f"weights_updates_{self.name}.npy", self.weights_updates)
 
     def print_weights(self):
         print("")
@@ -157,7 +159,22 @@ class QLambdaAgent:
         print("\n", self.epsilon, self.alpha)
 
     def _explore(self, game_state: dict):
-        action = np.random.choice(self.actions)
+        features = self._get_features(game_state)
+        features_tuple = tuple(features.flatten())
+        if features_tuple in self.state_action_count:
+            probabilities = softmax(-self.state_action_count[features_tuple])
+        else:
+            probabilities = np.ones(len(self.actions)) / len(self.actions)
+
+        action = np.random.choice(self.actions, p=probabilities)
+
+        if features_tuple in self.state_action_count:
+            self.state_action_count[features_tuple][self.action_indices[action]] += 1
+        else:
+            count = np.zeros(len(self.actions))
+            count[self.action_indices[action]] = 1
+            self.state_action_count[features_tuple] = count
+        
         return action
 
     def _exploit(self, game_state: dict):
@@ -167,6 +184,15 @@ class QLambdaAgent:
         best_actions = np.argwhere(q == np.amax(q)).flatten()
 
         action = self.actions[np.random.choice(best_actions)]
+
+        if self.train:
+            features_tuple = tuple(features.flatten())
+            if features_tuple in self.state_action_count:
+                self.state_action_count[features_tuple][self.action_indices[action]] += 1
+            else:
+                count = np.zeros(len(self.actions))
+                count[self.action_indices[action]] = 1
+                self.state_action_count[features_tuple] = count
 
         return action
 
@@ -183,9 +209,9 @@ class QLambdaAgent:
             elif event == e.COIN_COLLECTED:
                 reward += 150
             elif event == e.KILLED_OPPONENT:
-                reward += 500
+                reward += 1000
             elif event == e.KILLED_SELF:
-                reward += 0              # sd == KILLED_SELF + GOT_KILLED => reward(sd) = -1250
+                reward += 0              # sd == KILLED_SELF + GOT_KILLED => reward(sd) = -100
             elif event == e.GOT_KILLED:
                 reward += -1000
 
@@ -242,6 +268,9 @@ class QLambdaAgent:
         explosion_timer_map = {}
 
         for (bomb_x, bomb_y), timer in bombs:
+            if timer == 0:
+                # bomb already exploded => not important
+                continue
             explosion_timer_map[(bomb_x, bomb_y)] = min(timer, explosion_timer_map.get((bomb_x, bomb_y), 4))
 
             for i in range(1, settings.BOMB_POWER + 1):
@@ -285,7 +314,7 @@ class QLambdaAgent:
             bomb_x, bomb_y = current_position
             board_with_own_bomb[current_position] = 3
             board_only_own_bomb[current_position] = 3
-            explosion_timer_map[current_position] = min(4, explosion_timer_map.get(current_position, 4))
+            explosion_timer_map[current_position] = min(3, explosion_timer_map.get(current_position, 4))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x + i, bomb_y)
@@ -299,7 +328,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x - i, bomb_y)
@@ -313,7 +342,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x, bomb_y + i)
@@ -327,7 +356,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x, bomb_y - i)
@@ -341,7 +370,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(4, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
 
         return np.stack([
             # + move towards coin
@@ -508,16 +537,15 @@ class QLambdaAgent:
         # move/stay in explosion area
 
         # bomb timer     feature
-        #     4            0.25
-        #     3            0.5
-        #     2            0.75
-        #     1            1.0
+        #     3            1/3
+        #     2            2/3
+        #     1            3/3
         feature5 = np.zeros(len(self.actions))
 
         if board[current_position] == self.FREE_VALUE:
             for i, next_position in enumerate(next_positions):
                 if board[next_position] in (self.ENEMY_EXPLOSION_VALUE, self.OWN_EXPLOSION_VALUE):
-                    feature5[i] = (5 - explosion_timer_map[next_position]) / 4.
+                    feature5[i] = (4 - explosion_timer_map[next_position]) / 3.
             return feature5
 
         paths_out_of_explosion = self._shortest_path(board, current_position, self.FREE_VALUE, free_tiles=(self.FREE_VALUE, self.ENEMY_EXPLOSION_VALUE, self.OWN_EXPLOSION_VALUE))
@@ -526,8 +554,8 @@ class QLambdaAgent:
             best_next_positions = [path[1] for path in paths_out_of_explosion]
             for i, next_position in enumerate(next_positions):
                 if next_position not in best_next_positions:
-                    min_bomb_timer = min(explosion_timer_map[current_position], explosion_timer_map.get(next_position, 4))
-                    feature5[i] = (5 - min_bomb_timer) / 4.
+                    min_bomb_timer = min(explosion_timer_map[current_position], explosion_timer_map.get(next_position, 3))
+                    feature5[i] = (4 - min_bomb_timer) / 3.
 
         return feature5
 
@@ -675,6 +703,10 @@ class QLambdaAgent:
 
         feature10 = np.zeros(len(self.actions))
 
+        number_of_crates = (board_without_explosion == self.CRATE_VALUE).sum()
+        if number_of_crates > 5:
+            return feature10
+
         for next_position in next_positions:
             if board_without_explosion[next_position] == self.ENEMY_VALUE:
                 # already standing next to enemy
@@ -707,6 +739,11 @@ class QLambdaAgent:
             if feature10[i] == 0:
                 continue
             feature10[i] = min_path_length / feature10[i]
+
+        if min_path_length > 15:
+            feature10 *= 0.5
+        elif min_path_length > 10:
+            feature10 *= 0.75
 
         board_without_explosion[current_position] = value_of_current_position
 
@@ -907,6 +944,7 @@ class QLambdaAgent:
                 return False
             return True
 
+    """
     def _observation(self, state: dict) -> np.ndarray:
         # different approach:
         # like with chess, transform the state into
@@ -955,4 +993,4 @@ class QLambdaAgent:
         ], axis=-1)
 
         return np.expand_dims(observation, axis=0)
-
+    """
