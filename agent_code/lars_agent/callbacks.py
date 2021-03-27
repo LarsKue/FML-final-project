@@ -52,6 +52,6 @@ def act(self, game_state: dict):
 
     if self.train:
         self.predictions.append(prediction)
-        self.last_episode_predictions.append(prediction)
+        self.predictions.append(prediction)
 
     return action

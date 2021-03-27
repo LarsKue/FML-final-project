@@ -19,9 +19,8 @@ class DQBase:
         observation = DQBase.observation(state)
 
         logits = self.model.predict(observation)
-        predictions = tf.nn.softmax(logits)
 
-        return tf.math.argmax(predictions, axis=-1)
+        return tf.math.argmax(logits, axis=-1)
 
     from ._io import load, save
     load = staticmethod(load)

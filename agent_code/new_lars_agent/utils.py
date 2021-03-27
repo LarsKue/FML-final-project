@@ -30,7 +30,7 @@ def rolling_mean(x, n):
 
 
 @contextmanager
-def timer(msg, transform=None):
+def timer(msg, transform=None, stdout=print):
     start = perf_counter()
     yield
     stop = perf_counter()
@@ -40,7 +40,7 @@ def timer(msg, transform=None):
     if transform is not None:
         duration = transform(duration)
 
-    print(msg.format(duration))
+    stdout(msg.format(duration))
 
 
 def function_timer(msg=None, transform=None):

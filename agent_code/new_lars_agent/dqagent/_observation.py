@@ -1,3 +1,4 @@
+from typing import Optional
 
 import numpy as np
 import settings as s
@@ -30,7 +31,7 @@ def box(x, y, w, h, xlim, ylim):
     return result
 
 
-def observation(state: dict) -> np.ndarray:
+def observation_old(state: dict) -> np.ndarray:
     # even different approach:
     # 5x5x6 array of closest things
     result = np.squeeze(observation_old(state))
@@ -49,7 +50,7 @@ def observation(state: dict) -> np.ndarray:
     return np.expand_dims(result, axis=0)
 
 
-def observation_old(state: dict) -> np.ndarray:
+def observation(state: Optional[dict]) -> np.ndarray:
     # different approach:
     # like with chess, transform the state into
     # an M x N x K board with each K-layer
@@ -60,6 +61,14 @@ def observation_old(state: dict) -> np.ndarray:
     # coins
     # the player
     # enemies
+
+    if state is None:
+        # zero observation works with Q-Learning
+        # since the labels are calculated as
+        # y_true = reward + gamma * Q(s, a)
+        # with zero observation, the model predicts all zeros for Q
+        # ==> y_true = reward, which is what we want
+        return np.zeros((1, s.COLS, s.ROWS, 6), dtype=float)
 
     # walls and crates are given by the 'field' in the state
     walls = (state["field"] == -1).astype(float)
@@ -73,7 +82,7 @@ def observation_old(state: dict) -> np.ndarray:
         bombs[b[0][0], b[0][1]] = 4 - b[1]
 
     for c in state["coins"]:
-        coins[c[0], c[1]] = 10
+        coins[c[0], c[1]] = 1
 
     player = np.zeros((s.COLS, s.ROWS), dtype=float)
 

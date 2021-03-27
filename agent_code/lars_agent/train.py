@@ -46,7 +46,7 @@ def setup_training(self):
     self.epsilons = []
     self.steps_taken = []
     self.predictions = []
-    self.last_episode_predictions = []
+    self.predictions = []
 
     # must define input shape here since this is very slow (~1.5s) and otherwise happens in the first call to act()
     # so pretend to have some state to observe and pass to model.predict()
@@ -160,7 +160,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         axes[0][1].set_ylabel("Reward")
 
         p = np.array(self.predictions)
-        lp = np.array(self.last_episode_predictions)
+        lp = np.array(self.predictions)
 
         for i, action in enumerate(self.agent.actions):
             axes[0][2].scatter(np.arange(p.shape[0]), p[:, i], label=action, marker=".")
@@ -190,4 +190,4 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
         print("Done!")
 
-    self.last_episode_predictions.clear()
+    self.predictions.clear()

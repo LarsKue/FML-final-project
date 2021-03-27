@@ -8,14 +8,40 @@ from ..utils import rolling_mean
 
 
 class Diagnostics:
-    def __init__(self, actions):
-        self.actions = actions
-        self.returns = []
-        self.predictions = []
-        self.last_episode_predictions = []
-        self.epsilons = []
+    def __init__(self):
+        # per episode
+        self.coins = []
+        self.suicides = []
+        self.kills = []
+        self.deaths = []
 
-    def save(self, path, r):
+    def add_episode(self):
+        self.coins.append(0)
+        self.suicides.append(0)
+        self.kills.append(0)
+        self.deaths.append(0)
+
+    def __save(self, path):
+        path.mkdir(exist_ok=True)
+        np.save(path / Path("coins.npy"), np.asarray(self.coins))
+        np.save(path / Path("suicides.npy"), np.asarray(self.suicides))
+        np.save(path / Path("kills.npy"), np.asarray(self.kills))
+        np.save(path / Path("deaths.npy"), np.asarray(self.deaths))
+
+    def save(self, path, r=None, plot=True):
+        self.__save(path / Path("diagnostics_data"))
+
+        if not plot:
+            return
+
+        if r is None:
+            raise ValueError("Expected to receive episode number when plot=True")
+
+        # rolling mean over n samples
+        nrm = 5000
+
+        if nrm >= r:
+            return
 
         path = path / Path("diagnostics")
         path.mkdir(exist_ok=True)
@@ -25,29 +51,24 @@ class Diagnostics:
         fig, axes = plt.subplots(nrows, ncols, figsize=(1 + 9 * ncols, 9 * nrows))
 
         rounds = 1 + np.arange(r)
-        # rolling mean over n samples
-        nrm = 30
         rm_rounds = rounds[nrm // 2 - 1: -nrm // 2]
 
-        axes[0][0].scatter(rounds, self.returns, color="C0", marker=".")
-        axes[0][0].set_title("Returns")
-        axes[0][0].plot(rm_rounds, rolling_mean(self.returns, nrm), color="C1")
+        axes[0][0].plot(rm_rounds, rolling_mean(self.coins, nrm))
+        axes[0][0].set_title("Smoothed Coins")
+        axes[0][0].set_xlabel("Episode")
 
-        p = np.asarray(self.predictions)
-        lp = np.asarray(self.last_episode_predictions)
+        axes[0][1].plot(rm_rounds, rolling_mean(self.suicides, nrm))
+        axes[0][1].set_title("Smoothed Suicide Rate")
+        axes[0][1].set_xlabel("Episode")
 
-        for i, action in enumerate(self.actions):
-            axes[0][1].scatter(np.arange(p.shape[0]), p[:, i], label=action)
-            axes[1][1].scatter(np.arange(lp.shape[0]), lp[:, i], label=action)
+        axes[1][0].plot(rm_rounds, rolling_mean(self.kills, nrm))
+        axes[1][0].set_title("Smoothed Kills")
+        axes[1][0].set_xlabel("Episode")
 
-        axes[0][1].set_title("Action Predictions")
-        axes[0][1].legend()
+        axes[1][1].plot(rm_rounds, rolling_mean(self.deaths, nrm))
+        axes[1][1].set_title("Smoothed Death Rate (by others)")
+        axes[1][1].set_xlabel("Episode")
 
-        axes[1][0].plot(rounds, self.epsilons)
-        axes[1][0].set_title("Epsilon")
-
-        axes[1][1].set_title("Predictions in Last Episode")
-        axes[1][1].legend()
-
+        plt.tight_layout()
         plt.savefig(path / Path(str(r) + ".png"))
         plt.close()
