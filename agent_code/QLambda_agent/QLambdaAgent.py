@@ -1,6 +1,7 @@
 from typing import List
 import numpy as np
 from collections import deque
+from scipy.special import softmax
 
 import pickle
 import settings as s
@@ -17,7 +18,7 @@ class QLambdaAgent:
         # self.weights = np.array([2, 2, -1, 3, -3, 1, -1, 3, -1, 1, 1, 1, 1, -1], dtype=float).T
         # self.weights = np.array([1, 1, -1, 1, -1, 1, -1, 1, -1, 1, 1, 1, 1, -1], dtype=float).T
         if weights is None:
-            # np.array([1, 1, -1, 1, -1, 1, -1, 1, -1, 1, 1, 1, 1, -1], dtype=float).T
+            self.weights = np.array([1, 1, -1, 1, -1, 1, -1, 1, 0, 1, 1, 1, 0, -1], dtype=float).T
             self.weights = np.zeros(self.num_features)
         else:
             self.weights = weights
@@ -156,7 +157,7 @@ class QLambdaAgent:
             print(f"{w:0.3f}, ", sep="", end="")
 
         print("\n", self.epsilon, self.alpha)
-        
+
     def _softmax(self, x):
         return (np.exp(x - np.max(x)) / np.sum(np.exp(x - np.max(x))))
 
@@ -270,10 +271,7 @@ class QLambdaAgent:
         explosion_timer_map = {}
 
         for (bomb_x, bomb_y), timer in bombs:
-            if timer == 0:
-                # bomb already exploded => not important
-                continue
-            explosion_timer_map[(bomb_x, bomb_y)] = min(timer, explosion_timer_map.get((bomb_x, bomb_y), 4))
+            explosion_timer_map[(bomb_x, bomb_y)] = min(timer, explosion_timer_map.get((bomb_x, bomb_y), 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x + i, bomb_y)
@@ -281,7 +279,7 @@ class QLambdaAgent:
                     break
                 if board[coord] == self.FREE_VALUE:
                     board[coord] = self.ENEMY_EXPLOSION_VALUE
-                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x - i, bomb_y)
@@ -289,7 +287,7 @@ class QLambdaAgent:
                     break
                 if board[coord] == self.FREE_VALUE:
                     board[coord] = self.ENEMY_EXPLOSION_VALUE
-                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x, bomb_y + i)
@@ -297,7 +295,7 @@ class QLambdaAgent:
                     break
                 if board[coord] == self.FREE_VALUE:
                     board[coord] = self.ENEMY_EXPLOSION_VALUE
-                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x, bomb_y - i)
@@ -305,18 +303,18 @@ class QLambdaAgent:
                     break
                 if board[coord] == self.FREE_VALUE:
                     board[coord] = self.ENEMY_EXPLOSION_VALUE
-                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(timer, explosion_timer_map.get(coord, 3))
 
         board_with_own_bomb = board.copy()
         board_only_own_bomb = board_without_explosion.copy()
         hit_crates = False
         enemy_inside_explosion_area = False
-        if bomb_is_possible or self.previous_action == 'BOMB':
+        if bomb_is_possible:
             # placing bomb is possible
             bomb_x, bomb_y = current_position
             board_with_own_bomb[current_position] = 3
             board_only_own_bomb[current_position] = 3
-            explosion_timer_map[current_position] = min(3, explosion_timer_map.get(current_position, 4))
+            explosion_timer_map[current_position] = min(3, explosion_timer_map.get(current_position, 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x + i, bomb_y)
@@ -330,7 +328,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x - i, bomb_y)
@@ -344,7 +342,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x, bomb_y + i)
@@ -358,7 +356,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 3))
 
             for i in range(1, settings.BOMB_POWER + 1):
                 coord = (bomb_x, bomb_y - i)
@@ -372,7 +370,7 @@ class QLambdaAgent:
                     hit_crates = True
                 if board_with_own_bomb[coord] == self.ENEMY_VALUE:
                     enemy_inside_explosion_area = True
-                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 4))
+                    explosion_timer_map[coord] = min(3, explosion_timer_map.get(coord, 3))
 
         return np.stack([
             # + move towards coin
@@ -539,14 +537,18 @@ class QLambdaAgent:
         # move/stay in explosion area
 
         # bomb timer     feature
-        #     3            1/3
-        #     2            2/3
-        #     1            3/3
+        #     4            0.25
+        #     3            0.5
+        #     2            0.75
+        #     1            1.0
         feature5 = np.zeros(len(self.actions))
 
         if board[current_position] == self.FREE_VALUE:
             for i, next_position in enumerate(next_positions):
                 if board[next_position] in (self.ENEMY_EXPLOSION_VALUE, self.OWN_EXPLOSION_VALUE):
+                    timer = explosion_timer_map[next_position]
+                    if timer == 0:
+                        continue
                     feature5[i] = (4 - explosion_timer_map[next_position]) / 3.
             return feature5
 
@@ -557,6 +559,8 @@ class QLambdaAgent:
             for i, next_position in enumerate(next_positions):
                 if next_position not in best_next_positions:
                     min_bomb_timer = min(explosion_timer_map[current_position], explosion_timer_map.get(next_position, 3))
+                    if min_bomb_timer == 0:
+                        continue
                     feature5[i] = (4 - min_bomb_timer) / 3.
 
         return feature5
