@@ -20,7 +20,7 @@ class DQBase:
 
         logits = self.model.predict(observation)
 
-        return tf.math.argmax(logits, axis=-1)
+        return int(tf.math.argmax(logits, axis=-1))
 
     from ._io import load, save
     load = staticmethod(load)

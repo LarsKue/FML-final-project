@@ -86,8 +86,8 @@ def run_single():
     overwrite = True
 
     epsilon = 1.0
-    learning_rate = 1e-3
-    gamma = 0.8
+    learning_rate = 0.65
+    gamma = 0.85
 
     mode = "play"
     train = 1
@@ -106,7 +106,7 @@ def run_single():
     n_rounds = int(1.5e6)
     replay_file = None
 
-    base_path = "full"
+    base_path = "full_super_high_lr"
 
     #################################################
     settings_path = Path("agent_code/new_lars_agent/settings.json")

@@ -65,9 +65,9 @@ def alpha_gamma():
 
 def full():
 
-    agent_path = base_path / Path("full_self_play_3")
+    agent_path = base_path / Path("full_0")
 
-    nrm = 5000
+    nrms = [[512, 256], [2, 256]]
 
     ncols = 2
     nrows = 2
@@ -82,30 +82,37 @@ def full():
 
     r = len(coins)
     rounds = 1 + np.arange(r)
-    rm_rounds = rounds[nrm // 2 - 1: -nrm // 2]
 
+    nrm = nrms[0][0]
+    rm_rounds = rounds[nrm // 2 - 1: -nrm // 2]
     axes[0][0].plot(rm_rounds, rolling_mean(coins, nrm))
     axes[0][0].set_xlabel("Episode")
     axes[0][0].set_ylabel("Smoothed Coins")
     axes[0][0].set_title(f"Rolling Mean of Collected Coins per Episode $(n = {nrm})$")
 
+    nrm = nrms[0][1]
+    rm_rounds = rounds[nrm // 2 - 1: -nrm // 2]
     axes[0][1].plot(rm_rounds, rolling_mean(suicides, nrm))
     axes[0][1].set_xlabel("Episode")
     axes[0][1].set_ylabel("Smoothed Suicide Rate")
     axes[0][1].set_title(f"Rolling Mean of the Suicide Rate $(n = {nrm})$")
 
+    nrm = nrms[1][0]
+    rm_rounds = rounds[nrm // 2 - 1: -nrm // 2]
     axes[1][0].plot(rm_rounds, rolling_mean(kills, nrm))
     axes[1][0].set_xlabel("Episode")
     axes[1][0].set_ylabel("Smoothed Kills")
     axes[1][0].set_title(f"Rolling Mean of Kills $(n = {nrm})$")
 
+    nrm = nrms[1][1]
+    rm_rounds = rounds[nrm // 2 - 1: -nrm // 2]
     axes[1][1].plot(rm_rounds, rolling_mean(deaths, nrm))
     axes[1][1].set_xlabel("Episode")
     axes[1][1].set_ylabel("Smoothed Death Rate")
     axes[1][1].set_title(f"Rolling Mean of the Death Rate by Others $(n = {nrm})$")
 
     plt.tight_layout()
-    plt.savefig("alpha_gamma_analysis.png")
+    plt.savefig("DQTrain.png")
     plt.show()
 
 

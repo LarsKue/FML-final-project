@@ -1,1 +1,1 @@
-{"setup": {"use_existing_model": false, "path": "full", "overwrite": true}, "train": {"epsilon": 1.0, "gamma": 0.8, "learning_rate": 0.001}}
+{"setup": {"use_existing_model": false, "path": "full_super_high_lr", "overwrite": true}, "train": {"epsilon": 1.0, "gamma": 0.85, "learning_rate": 0.65}}
