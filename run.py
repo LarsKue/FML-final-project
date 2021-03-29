@@ -28,7 +28,7 @@ def run_many():
     mode = "play"
     train = 1
     agents = [
-        "new_lars_agent",
+        "dq_agent",
         # "rule_based_agent",
         # "rule_based_agent",
         # "rule_based_agent"
@@ -38,7 +38,7 @@ def run_many():
     n_rounds = int(5e5)
     replay_file = None
 
-    settings_path = Path("agent_code/new_lars_agent/settings.json")
+    settings_path = Path("agent_code/dq_agent/settings.json")
     with open(settings_path, "r") as f:
         settings = json.load(f)
 
@@ -92,10 +92,10 @@ def run_single():
     mode = "play"
     train = 1
     agents = [
-        "new_lars_agent",
-        # "new_lars_agent",
-        # "new_lars_agent",
-        # "new_lars_agent",
+        "dq_agent",
+        # "dq_agent",
+        # "dq_agent",
+        # "dq_agent",
         "rule_based_agent",
         "rule_based_agent",
         "rule_based_agent"
@@ -109,7 +109,7 @@ def run_single():
     base_path = "full_super_high_lr"
 
     #################################################
-    settings_path = Path("agent_code/new_lars_agent/settings.json")
+    settings_path = Path("agent_code/dq_agent/settings.json")
 
     if settings_path.is_file():
         with open(settings_path, "r") as f:

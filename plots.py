@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 
 
-base_path = Path("agent_code/new_lars_agent")
+base_path = Path("agent_code/dq_agent")
 
 
 def rolling_mean(x, n):
